@@ -1,9 +1,9 @@
 name: Run MCI Hunter
 
 on:
-  workflow_dispatch:      # برای اجرای دستی
+  workflow_dispatch:      # اجرای دستی
   schedule:
-    - cron: '0 */1 * * *' # اجرای خودکار هر 6 ساعت
+    - cron: '0 */1 * * *' # هر 4 ساعت
 
 permissions:
   contents: write
@@ -11,6 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    
     steps:
       - name: Checkout Code
         uses: actions/checkout@v2
@@ -20,16 +21,19 @@ jobs:
         with:
           python-version: '3.9'
 
-      - name: Install Requests
-        run: pip install requests
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
 
-      - name: Run Script
+      - name: Run Python Script
         run: python main.py
 
-      - name: Save Results
+      - name: Commit and Push
         run: |
-          git config --global user.name "Bot"
-          git config --global user.email "bot@github.com"
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
           git add sub.txt
-          git commit -m "Updated Configs" || echo "No changes"
+          # این خط جادویی است: اگر تغییری نباشد، ارور نمی‌دهد
+          git commit -m "Auto Update Configs" || echo "⚠️ No changes to commit"
           git push
