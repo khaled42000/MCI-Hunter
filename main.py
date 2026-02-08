@@ -1,130 +1,93 @@
 import requests
 import random
 import re
-import base64
+import os
 
-# --- منابع (آپدیت شده و تضمینی) ---
-CLEAN_IP_SOURCES = [
-    "https://raw.githubusercontent.com/ircfspace/scanner/main/sub/sub_mci",
-    "https://raw.githubusercontent.com/ircfspace/scanner/main/sub/sub_irancell",
-    "https://raw.githubusercontent.com/barry-far/V2ray-Configs/main/Sub1.txt" # منبع کمکی
-]
-
-CONFIG_SOURCES = [
-    "https://raw.githubusercontent.com/yebekhe/TelegramV2rayCollector/main/sub/normal/vless",
-    "https://raw.githubusercontent.com/yebekhe/TelegramV2rayCollector/main/sub/normal/reality",
-    "https://raw.githubusercontent.com/mahdibland/V2RayAggregator/master/sub/sub_merge.txt",
-    "https://raw.githubusercontent.com/Iranian-V2Ray/configs/main/v2ray"
-]
-
-def get_content(url):
+def get_data(url):
     try:
-        resp = requests.get(url, timeout=15)
+        # هدر واقعی مرورگر برای جلوگیری از بلاک شدن
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+        resp = requests.get(url, headers=headers, timeout=15)
         if resp.status_code == 200:
             return resp.text
     except Exception as e:
-        print(f"! Error fetching {url}: {e}")
+        print(f"⚠️ Error downloading {url}: {e}")
     return ""
 
-def get_clean_ips():
-    print("--- Searching for Clean IPs ---")
-    ips = []
-    for source in CLEAN_IP_SOURCES:
-        text = get_content(source)
-        # الگوی دقیق برای پیدا کردن IP (عدد.عدد.عدد.عدد)
-        found = re.findall(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', text)
-        ips.extend(found)
-        print(f"  + Found {len(found)} IPs from {source}")
+def main():
+    print("🚀 Starting MCI Hunter...")
     
-    unique_ips = list(set(ips))
-    # حذف آی‌پی‌های لوکال و نامعتبر
-    clean = [ip for ip in unique_ips if not ip.startswith('127.') and not ip.startswith('0.')]
-    print(f"Total Unique Clean IPs: {len(clean)}")
-    return clean
+    # 1. پیدا کردن آی‌پی‌های تمیز
+    clean_ips = []
+    ip_sources = [
+        "https://raw.githubusercontent.com/ircfspace/scanner/main/sub/sub_mci",
+        "https://raw.githubusercontent.com/ircfspace/scanner/main/sub/sub_irancell"
+    ]
+    
+    for src in ip_sources:
+        text = get_data(src)
+        # پیدا کردن الگوی آی‌پی
+        found = re.findall(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', text)
+        clean_ips.extend(found)
+    
+    clean_ips = list(set(clean_ips))
+    # حذف لوکال‌ها
+    clean_ips = [ip for ip in clean_ips if not ip.startswith("127.") and not ip.startswith("0.")]
+    
+    if not clean_ips:
+        print("⚠️ No clean IPs found! Using backup IPs.")
+        clean_ips = ['104.16.200.200', '162.159.135.42'] # آی‌پی‌های زاپاس کلودفلر
+    else:
+        print(f"✅ Found {len(clean_ips)} clean IPs.")
 
-def get_configs():
-    print("--- Collecting Configs ---")
-    configs = []
-    for source in CONFIG_SOURCES:
-        text = get_content(source)
+    # 2. پیدا کردن کانفیگ‌ها
+    raw_configs = []
+    conf_sources = [
+        "https://raw.githubusercontent.com/yebekhe/TelegramV2rayCollector/main/sub/normal/vless",
+        "https://raw.githubusercontent.com/yebekhe/TelegramV2rayCollector/main/sub/normal/reality",
+        "https://raw.githubusercontent.com/mahdibland/V2RayAggregator/master/sub/sub_merge.txt"
+    ]
+
+    for src in conf_sources:
+        text = get_data(src)
         lines = text.splitlines()
         for line in lines:
             line = line.strip()
-            # فیلتر کردن کانفیگ‌های معتبر
-            if line.startswith("vless://") or line.startswith("vmess://") or line.startswith("trojan://"):
-                 configs.append(line)
-        print(f"  + Collected configs from {source}")
+            if line.startswith("vless://") or line.startswith("trojan://"):
+                raw_configs.append(line)
     
-    # حذف تکراری‌ها
-    unique_configs = list(set(configs))
-    print(f"Total Raw Configs: {len(unique_configs)}")
-    return unique_configs
+    print(f"✅ Found {len(raw_configs)} raw configs.")
 
-def main():
-    clean_ips = get_clean_ips()
-    raw_configs = get_configs()
-
-    # اگر آی‌پی پیدا نشد، از چند آی‌پی معروف کلودفلر استفاده کن
-    if not clean_ips:
-        print("! Warning: No clean IPs found. Using defaults.")
-        clean_ips = ['104.16.200.200', '162.159.135.42', '198.41.200.200']
-
-    final_configs = []
+    # 3. تزریق و ساخت فایل نهایی
+    final_list = []
     
-    print("--- Injecting IPs ---")
     for conf in raw_configs:
-        # ما فقط روی VLESS و Reality تمرکز می‌کنیم چون برای تزریق راحت‌ترند
-        if "vless://" in conf:
-            try:
-                # استخراج اطلاعات لینک با Regex (روش مطمئن‌تر)
-                # vless://UUID@HOST:PORT?PARAMS#NAME
-                match = re.search(r'vless://([^@]+)@([^:]+):(\d+)\?([^#]+)(?:#(.*))?', conf)
+        try:
+            # اگر VLESS باشد تزریق می‌کنیم
+            if "vless://" in conf:
+                ip = random.choice(clean_ips)
+                # جایگزینی ساده آی‌پی بین @ و :
+                # Regex برای پیدا کردن قسمت آدرس
+                conf = re.sub(r'@(.*?):', f'@{ip}:', conf, 1)
                 
-                if match:
-                    uuid = match.group(1)
-                    original_host = match.group(2)
-                    port = match.group(3)
-                    params = match.group(4)
-                    name = match.group(5) if match.group(5) else "Config"
+                if "#" not in conf: conf += "#MCI_Hunter"
+                final_list.append(conf)
+            else:
+                final_list.append(conf)
+        except:
+            continue
 
-                    # انتخاب آی‌پی تمیز
-                    random_ip = random.choice(clean_ips)
-                    
-                    # اطمینان از وجود SNI و HOST در پارامترها
-                    new_params = params
-                    if "sni=" not in new_params: new_params += f"&sni={original_host}"
-                    if "host=" not in new_params: new_params += f"&host={original_host}"
-                    
-                    # ساخت لینک جدید
-                    new_link = f"vless://{uuid}@{random_ip}:{port}?{new_params}#🚀_MCI_{name}"
-                    final_configs.append(new_link)
-                else:
-                    # اگر نتوانستیم تزریق کنیم، خود کانفیگ اصلی را اضافه کن (به عنوان زاپاس)
-                    final_configs.append(conf)
-            except Exception as e:
-                # در صورت هرگونه خطا، کانفیگ خام را نگه دار
-                final_configs.append(conf)
-        else:
-            # کانفیگ‌های VMess و Trojan را بدون تغییر اضافه کن (چون تزریقشان سخت است)
-            final_configs.append(conf)
+    # اگر لیست خالی ماند (محض احتیاط)
+    if not final_list:
+        final_list = ["vless://uuid@104.16.200.200:443?encryption=none&security=tls&type=ws&host=dl.google.com&sni=dl.google.com#ERROR_BACKUP"]
 
-    print(f"Final Processed Configs: {len(final_configs)}")
-
-    # اگر لیست نهایی خالی بود (که محال است)، حداقل یک پیام خطا بنویس
-    if not final_configs:
-        final_configs = ["vless://uuid@127.0.0.1:443?encryption=none&security=tls&type=ws&host=example.com&sni=example.com#ERROR_NO_CONFIGS"]
-
-    # مخلوط کردن لیست
-    random.shuffle(final_configs)
-    
-    # محدود کردن به 150 تا (برای جلوگیری از هنگ کردن کلاینت)
-    output_list = final_configs[:150]
-
-    # ذخیره در فایل sub.txt
+    # ذخیره فایل
+    random.shuffle(final_list)
+    # نوشتن فایل
     with open("sub.txt", "w", encoding="utf-8") as f:
-        f.write("\n".join(output_list))
-    
-    print(">>> SUCCESS: sub.txt generated!")
+        f.write("\n".join(final_list[:150]))
+        
+    print("🎉 sub.txt created successfully!")
 
 if __name__ == "__main__":
     main()
