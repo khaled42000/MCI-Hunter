@@ -1,9 +1,9 @@
-name: Run Bot
+name: Run Ultimate Bot
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:      # دکمه اجرای دستی
   schedule:
-    - cron: '0 */4 * * *'
+    - cron: '0 */4 * * *' # اجرای خودکار هر 4 ساعت
 
 permissions:
   contents: write
@@ -12,21 +12,25 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout Code
+        uses: actions/checkout@v2
       
-      - uses: actions/setup-python@v2
+      - name: Setup Python
+        uses: actions/setup-python@v2
         with:
           python-version: '3.9'
           
-      - run: pip install requests
+      - name: Install Dependencies
+        run: pip install requests
       
-      - name: Run Script
+      - name: Run Harvester
         run: python main.py
       
-      - name: Save
+      - name: Save Results
         run: |
           git config --global user.name "Bot"
           git config --global user.email "bot@github.com"
-          git add sub.txt
+          git add sub.txt sub_b64.txt
+          # این خط مهم است: اگر تغییری نبود، با موفقیت خارج شو (سبز بمان)
           git commit -m "Auto Update" || exit 0
           git push
