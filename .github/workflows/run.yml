@@ -1,0 +1,32 @@
+name: Run Bot
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */4 * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      
+      - uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+          
+      - run: pip install requests
+      
+      - name: Run Script
+        run: python main.py
+      
+      - name: Save
+        run: |
+          git config --global user.name "Bot"
+          git config --global user.email "bot@github.com"
+          git add sub.txt
+          git commit -m "Auto Update" || exit 0
+          git push
