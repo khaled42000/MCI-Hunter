@@ -1,0 +1,36 @@
+name: Best V2Ray Bot
+
+on:
+  workflow_dispatch:      # دکمه دستی
+  schedule:
+    - cron: '0 */3 * * *' # اجرای خودکار هر 3 ساعت
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v2
+      
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.9'
+          
+      - name: Install Libs
+        run: pip install requests
+      
+      - name: Run Harvester
+        run: python main.py
+      
+      - name: Auto Commit
+        run: |
+          git config --global user.name "Actions Bot"
+          git config --global user.email "bot@github.com"
+          git add sub.txt
+          # این دستور جادویی است:
+          # اگر تغییری بود کامیت می‌کند، اگر نبود پیام می‌دهد و خارج می‌شود (سبز می‌ماند)
+          git diff --quiet && git diff --staged --quiet || (git commit -m "Update Configs" && git push)
