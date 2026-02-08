@@ -1,93 +1,118 @@
 import requests
 import random
 import re
-import os
+import base64
 
-def get_data(url):
+# --- تنظیمات ---
+# پورت‌های مجاز کلودفلر (فقط این‌ها اجازه تزریق دارند)
+CF_PORTS = ['443', '2053', '2083', '2087', '2096', '8443', '80', '8080', '8880', '2052', '2082', '2086', '2095']
+
+# منابع آی‌پی تمیز (مخصوص ایران)
+IP_SOURCES = [
+    "https://raw.githubusercontent.com/ircfspace/scanner/main/sub/sub_mci",      # همراه اول
+    "https://raw.githubusercontent.com/ircfspace/scanner/main/sub/sub_irancell", # ایرانسل
+    "https://raw.githubusercontent.com/yebekhe/TelegramV2rayCollector/main/sub/normal/donated" # آی‌پی‌های اهدایی
+]
+
+# منابع کانفیگ
+CONFIG_SOURCES = [
+    "https://raw.githubusercontent.com/yebekhe/TelegramV2rayCollector/main/sub/normal/reality", # ریلیتی (دست نخورد)
+    "https://raw.githubusercontent.com/yebekhe/TelegramV2rayCollector/main/sub/normal/vless",   # مناسب تزریق
+    "https://raw.githubusercontent.com/mahdibland/V2RayAggregator/master/sub/sub_merge.txt"
+]
+
+def get_text(url):
     try:
-        # هدر واقعی مرورگر برای جلوگیری از بلاک شدن
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        resp = requests.get(url, headers=headers, timeout=15)
+        headers = {'User-Agent': 'v2rayNG'}
+        resp = requests.get(url, headers=headers, timeout=10)
         if resp.status_code == 200:
             return resp.text
-    except Exception as e:
-        print(f"⚠️ Error downloading {url}: {e}")
+    except:
+        pass
     return ""
 
 def main():
-    print("🚀 Starting MCI Hunter...")
-    
-    # 1. پیدا کردن آی‌پی‌های تمیز
+    print("🚀 Starting Smart Hunter...")
+
+    # 1. دریافت آی‌پی‌های تمیز
     clean_ips = []
-    ip_sources = [
-        "https://raw.githubusercontent.com/ircfspace/scanner/main/sub/sub_mci",
-        "https://raw.githubusercontent.com/ircfspace/scanner/main/sub/sub_irancell"
-    ]
-    
-    for src in ip_sources:
-        text = get_data(src)
-        # پیدا کردن الگوی آی‌پی
+    for src in IP_SOURCES:
+        text = get_text(src)
+        # یافتن آی‌پی‌ها
         found = re.findall(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', text)
         clean_ips.extend(found)
     
-    clean_ips = list(set(clean_ips))
-    # حذف لوکال‌ها
-    clean_ips = [ip for ip in clean_ips if not ip.startswith("127.") and not ip.startswith("0.")]
+    # حذف لوکال و تکراری
+    clean_ips = list(set([ip for ip in clean_ips if not ip.startswith("127.")]))
     
     if not clean_ips:
-        print("⚠️ No clean IPs found! Using backup IPs.")
-        clean_ips = ['104.16.200.200', '162.159.135.42'] # آی‌پی‌های زاپاس کلودفلر
-    else:
-        print(f"✅ Found {len(clean_ips)} clean IPs.")
+        clean_ips = ['104.16.200.200', '162.159.135.42'] # آی‌پی زاپاس
+    
+    print(f"✅ Found {len(clean_ips)} Clean IPs")
 
-    # 2. پیدا کردن کانفیگ‌ها
-    raw_configs = []
-    conf_sources = [
-        "https://raw.githubusercontent.com/yebekhe/TelegramV2rayCollector/main/sub/normal/vless",
-        "https://raw.githubusercontent.com/yebekhe/TelegramV2rayCollector/main/sub/normal/reality",
-        "https://raw.githubusercontent.com/mahdibland/V2RayAggregator/master/sub/sub_merge.txt"
-    ]
-
-    for src in conf_sources:
-        text = get_data(src)
+    # 2. دریافت و پردازش کانفیگ‌ها
+    final_configs = []
+    
+    for src in CONFIG_SOURCES:
+        text = get_text(src)
         lines = text.splitlines()
+        
         for line in lines:
             line = line.strip()
-            if line.startswith("vless://") or line.startswith("trojan://"):
-                raw_configs.append(line)
-    
-    print(f"✅ Found {len(raw_configs)} raw configs.")
+            
+            # --- استراتژی 1: ریلیتی (Reality) ---
+            # این‌ها را اصلاً دست نزن، چون خراب می‌شوند. مستقیم اضافه کن.
+            if "pbk=" in line or "fp=" in line and "sni=" in line and "type=grpc" in line:
+                if "#" not in line: line += "#💎_Reality_Original"
+                final_configs.append(line)
+                continue
 
-    # 3. تزریق و ساخت فایل نهایی
-    final_list = []
-    
-    for conf in raw_configs:
-        try:
-            # اگر VLESS باشد تزریق می‌کنیم
-            if "vless://" in conf:
-                ip = random.choice(clean_ips)
-                # جایگزینی ساده آی‌پی بین @ و :
-                # Regex برای پیدا کردن قسمت آدرس
-                conf = re.sub(r'@(.*?):', f'@{ip}:', conf, 1)
-                
-                if "#" not in conf: conf += "#MCI_Hunter"
-                final_list.append(conf)
-            else:
-                final_list.append(conf)
-        except:
-            continue
+            # --- استراتژی 2: تزریق هوشمند (Smart Injection) ---
+            # فقط روی VLESS هایی که Websocket هستند و پورت استاندارد دارند اجرا شود
+            if line.startswith("vless://") and "type=ws" in line:
+                try:
+                    # استخراج پورت
+                    # vless://uuid@ip:PORT?params
+                    part_address = line.split("@")[1]
+                    port = part_address.split("?")[0].split(":")[1]
+                    
+                    # اگر پورت جزو پورت‌های کلودفلر بود، تزریق کن
+                    if port in CF_PORTS:
+                        ip = random.choice(clean_ips)
+                        # Regex برای جایگزینی فقط بخش آی‌پی
+                        # پیدا کردن چیزی بین @ و :
+                        line = re.sub(r'@(.*?):', f'@{ip}:', line, 1)
+                        
+                        # مطمئن شویم SNI و HOST وجود دارد (برای جلوگیری از اختلال)
+                        # استخراج هاست اصلی از کانفیگ
+                        # معمولاً host=domain.com یا sni=domain.com است
+                        # اگر نداشت، این کانفیگ به درد تزریق نمی‌خورد، ردش می‌کنیم
+                        if "sni=" in line or "host=" in line:
+                            # تغییر نام
+                            line = line.split("#")[0] + f"#🚀_Turbo_{random.randint(100,999)}"
+                            final_configs.append(line)
+                    else:
+                        # اگر پورتش استاندارد نبود، دست نزن و خود کانفیگ را بگذار
+                        final_configs.append(line)
+                except:
+                    continue
+            
+            # --- استراتژی 3: سایر موارد (Trojan, VMess) ---
+            # این‌ها را هم به عنوان زاپاس نگه دار (بدون تغییر)
+            elif line.startswith("trojan://") or line.startswith("ss://"):
+                final_configs.append(line)
 
-    # اگر لیست خالی ماند (محض احتیاط)
-    if not final_list:
-        final_list = ["vless://uuid@104.16.200.200:443?encryption=none&security=tls&type=ws&host=dl.google.com&sni=dl.google.com#ERROR_BACKUP"]
+    # شافل کردن برای تنوع
+    random.shuffle(final_configs)
+    
+    # محدود کردن تعداد (100 تای اول)
+    output = final_configs[:100]
 
     # ذخیره فایل
-    random.shuffle(final_list)
-    # نوشتن فایل
     with open("sub.txt", "w", encoding="utf-8") as f:
-        f.write("\n".join(final_list[:150]))
-        
-    print("🎉 sub.txt created successfully!")
+        f.write("\n".join(output))
+
+    print(f"🎉 Success! Generated {len(output)} valid configs.")
 
 if __name__ == "__main__":
     main()
