@@ -1,118 +1,112 @@
 import requests
 import random
 import re
-import base64
+import os
 
 # --- تنظیمات ---
-# پورت‌های مجاز کلودفلر (فقط این‌ها اجازه تزریق دارند)
-CF_PORTS = ['443', '2053', '2083', '2087', '2096', '8443', '80', '8080', '8880', '2052', '2082', '2086', '2095']
-
-# منابع آی‌پی تمیز (مخصوص ایران)
+# منابع آی‌پی تمیز
 IP_SOURCES = [
-    "https://raw.githubusercontent.com/ircfspace/scanner/main/sub/sub_mci",      # همراه اول
-    "https://raw.githubusercontent.com/ircfspace/scanner/main/sub/sub_irancell", # ایرانسل
-    "https://raw.githubusercontent.com/yebekhe/TelegramV2rayCollector/main/sub/normal/donated" # آی‌پی‌های اهدایی
+    "https://raw.githubusercontent.com/ircfspace/scanner/main/sub/sub_mci",
+    "https://raw.githubusercontent.com/ircfspace/scanner/main/sub/sub_irancell",
+    "https://raw.githubusercontent.com/yebekhe/TelegramV2rayCollector/main/sub/normal/donated"
 ]
 
 # منابع کانفیگ
 CONFIG_SOURCES = [
-    "https://raw.githubusercontent.com/yebekhe/TelegramV2rayCollector/main/sub/normal/reality", # ریلیتی (دست نخورد)
-    "https://raw.githubusercontent.com/yebekhe/TelegramV2rayCollector/main/sub/normal/vless",   # مناسب تزریق
+    "https://raw.githubusercontent.com/yebekhe/TelegramV2rayCollector/main/sub/normal/reality",
+    "https://raw.githubusercontent.com/yebekhe/TelegramV2rayCollector/main/sub/normal/vless",
     "https://raw.githubusercontent.com/mahdibland/V2RayAggregator/master/sub/sub_merge.txt"
 ]
 
-def get_text(url):
+def get_content(url):
     try:
-        headers = {'User-Agent': 'v2rayNG'}
-        resp = requests.get(url, headers=headers, timeout=10)
+        # هدر مرورگر برای جلوگیری از مسدود شدن
+        headers = {'User-Agent': 'Mozilla/5.0'}
+        resp = requests.get(url, headers=headers, timeout=15)
         if resp.status_code == 200:
             return resp.text
     except:
-        pass
+        return ""
     return ""
 
 def main():
-    print("🚀 Starting Smart Hunter...")
+    print("🚀 Starting Process...")
 
-    # 1. دریافت آی‌پی‌های تمیز
+    # 1. جمع‌آوری آی‌پی‌های تمیز
     clean_ips = []
     for src in IP_SOURCES:
-        text = get_text(src)
-        # یافتن آی‌پی‌ها
+        text = get_content(src)
         found = re.findall(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', text)
         clean_ips.extend(found)
     
-    # حذف لوکال و تکراری
-    clean_ips = list(set([ip for ip in clean_ips if not ip.startswith("127.")]))
+    # حذف تکراری‌ها و آی‌پی‌های لوکال
+    clean_ips = list(set([ip for ip in clean_ips if not ip.startswith("127.") and not ip.startswith("0.")]))
     
     if not clean_ips:
-        clean_ips = ['104.16.200.200', '162.159.135.42'] # آی‌پی زاپاس
-    
-    print(f"✅ Found {len(clean_ips)} Clean IPs")
+        # آی‌پی زاپاس (اگر هیچی پیدا نشد)
+        clean_ips = ['104.16.200.200', '162.159.135.42']
 
-    # 2. دریافت و پردازش کانفیگ‌ها
+    print(f"✅ Loaded {len(clean_ips)} Clean IPs")
+
+    # 2. جمع‌آوری و پردازش کانفیگ‌ها
     final_configs = []
     
     for src in CONFIG_SOURCES:
-        text = get_text(src)
+        text = get_content(src)
         lines = text.splitlines()
         
         for line in lines:
             line = line.strip()
-            
-            # --- استراتژی 1: ریلیتی (Reality) ---
-            # این‌ها را اصلاً دست نزن، چون خراب می‌شوند. مستقیم اضافه کن.
-            if "pbk=" in line or "fp=" in line and "sni=" in line and "type=grpc" in line:
-                if "#" not in line: line += "#💎_Reality_Original"
-                final_configs.append(line)
-                continue
+            if len(line) < 10: continue
 
-            # --- استراتژی 2: تزریق هوشمند (Smart Injection) ---
-            # فقط روی VLESS هایی که Websocket هستند و پورت استاندارد دارند اجرا شود
-            if line.startswith("vless://") and "type=ws" in line:
-                try:
-                    # استخراج پورت
-                    # vless://uuid@ip:PORT?params
-                    part_address = line.split("@")[1]
-                    port = part_address.split("?")[0].split(":")[1]
-                    
-                    # اگر پورت جزو پورت‌های کلودفلر بود، تزریق کن
-                    if port in CF_PORTS:
+            try:
+                # --- استراتژی ریلیتی (دست نخورد) ---
+                if "pbk=" in line or "fp=" in line and "type=grpc" in line:
+                    final_configs.append(line)
+                    continue
+
+                # --- استراتژی تزریق (فقط VLESS + WS) ---
+                if line.startswith("vless://") and "type=ws" in line:
+                    # چک کردن اینکه لینک سالم است (حتما @ و : داشته باشد)
+                    if "@" in line and ":" in line:
+                        # انتخاب آی‌پی تمیز
                         ip = random.choice(clean_ips)
-                        # Regex برای جایگزینی فقط بخش آی‌پی
-                        # پیدا کردن چیزی بین @ و :
+                        
+                        # جایگزینی آی‌پی با Regex امن
+                        # فقط آی‌پی بین @ و : را عوض می‌کند
                         line = re.sub(r'@(.*?):', f'@{ip}:', line, 1)
                         
-                        # مطمئن شویم SNI و HOST وجود دارد (برای جلوگیری از اختلال)
-                        # استخراج هاست اصلی از کانفیگ
-                        # معمولاً host=domain.com یا sni=domain.com است
-                        # اگر نداشت، این کانفیگ به درد تزریق نمی‌خورد، ردش می‌کنیم
-                        if "sni=" in line or "host=" in line:
-                            # تغییر نام
-                            line = line.split("#")[0] + f"#🚀_Turbo_{random.randint(100,999)}"
-                            final_configs.append(line)
-                    else:
-                        # اگر پورتش استاندارد نبود، دست نزن و خود کانفیگ را بگذار
+                        # تغییر نام برای زیبایی
+                        if "#" in line:
+                            line = line.split("#")[0] + f"#🚀_MCI_TURBO_{random.randint(1,999)}"
+                        else:
+                            line += f"#🚀_MCI_TURBO_{random.randint(1,999)}"
+                            
                         final_configs.append(line)
-                except:
-                    continue
-            
-            # --- استراتژی 3: سایر موارد (Trojan, VMess) ---
-            # این‌ها را هم به عنوان زاپاس نگه دار (بدون تغییر)
-            elif line.startswith("trojan://") or line.startswith("ss://"):
-                final_configs.append(line)
+                    else:
+                        # لینک خراب بود، ردش کن
+                        continue
+                
+                # --- سایر پروتکل‌ها (Trojan/Shadowsocks) ---
+                elif line.startswith("trojan://") or line.startswith("ss://"):
+                    final_configs.append(line)
 
-    # شافل کردن برای تنوع
+            except Exception:
+                # اگر هر خطایی در پردازش این خط رخ داد، نادیده بگیر و برو بعدی
+                # این باعث می‌شود برنامه هرگز کرش نکند
+                continue
+
+    # 3. ذخیره نهایی
+    if not final_configs:
+        # محض احتیاط اگر لیست خالی شد
+        final_configs = ["vless://uuid@127.0.0.1:443?encryption=none&security=tls&type=ws&host=google.com&sni=google.com#BACKUP_CONFIG"]
+
     random.shuffle(final_configs)
-    
-    # محدود کردن تعداد (100 تای اول)
-    output = final_configs[:100]
-
-    # ذخیره فایل
+    # نوشتن فایل
     with open("sub.txt", "w", encoding="utf-8") as f:
-        f.write("\n".join(output))
+        f.write("\n".join(final_configs[:150]))
 
-    print(f"🎉 Success! Generated {len(output)} valid configs.")
+    print("🎉 Done! sub.txt updated.")
 
 if __name__ == "__main__":
     main()
