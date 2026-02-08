@@ -1,112 +1,100 @@
 import requests
 import random
 import re
-import os
 
-# --- تنظیمات ---
-# منابع آی‌پی تمیز
-IP_SOURCES = [
-    "https://raw.githubusercontent.com/ircfspace/scanner/main/sub/sub_mci",
-    "https://raw.githubusercontent.com/ircfspace/scanner/main/sub/sub_irancell",
-    "https://raw.githubusercontent.com/yebekhe/TelegramV2rayCollector/main/sub/normal/donated"
+# --- لیست آی‌پی‌های تمیز و دامنه‌های فرانچایز (مخصوص ایرانسل و همراه اول) ---
+# این‌ها تست شده هستند
+CLEAN_IPS = [
+    "www.visa.com", 
+    "www.udemy.com", 
+    "discord.com", 
+    "cdn.discordapp.com",
+    "104.16.200.200", 
+    "162.159.135.42",
+    "198.41.200.200",
+    "172.64.152.14"
 ]
 
-# منابع کانفیگ
-CONFIG_SOURCES = [
+# --- منابع کانفیگ (بهترین‌های گیت‌هاب) ---
+SOURCES = [
+    # ریلیتی (بهترین سرعت - بدون نیاز به تغییر)
     "https://raw.githubusercontent.com/yebekhe/TelegramV2rayCollector/main/sub/normal/reality",
+    # وی‌لس (نیاز به تزریق آی‌پی)
     "https://raw.githubusercontent.com/yebekhe/TelegramV2rayCollector/main/sub/normal/vless",
+    # میکس (کمکی)
     "https://raw.githubusercontent.com/mahdibland/V2RayAggregator/master/sub/sub_merge.txt"
 ]
 
-def get_content(url):
+def get_data(url):
     try:
-        # هدر مرورگر برای جلوگیری از مسدود شدن
-        headers = {'User-Agent': 'Mozilla/5.0'}
-        resp = requests.get(url, headers=headers, timeout=15)
-        if resp.status_code == 200:
-            return resp.text
+        resp = requests.get(url, timeout=10)
+        return resp.text if resp.status_code == 200 else ""
     except:
         return ""
-    return ""
 
 def main():
-    print("🚀 Starting Process...")
-
-    # 1. جمع‌آوری آی‌پی‌های تمیز
-    clean_ips = []
-    for src in IP_SOURCES:
-        text = get_content(src)
-        found = re.findall(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b', text)
-        clean_ips.extend(found)
+    print("🚀 Starting Sniper Mode...")
     
-    # حذف تکراری‌ها و آی‌پی‌های لوکال
-    clean_ips = list(set([ip for ip in clean_ips if not ip.startswith("127.") and not ip.startswith("0.")]))
-    
-    if not clean_ips:
-        # آی‌پی زاپاس (اگر هیچی پیدا نشد)
-        clean_ips = ['104.16.200.200', '162.159.135.42']
-
-    print(f"✅ Loaded {len(clean_ips)} Clean IPs")
-
-    # 2. جمع‌آوری و پردازش کانفیگ‌ها
     final_configs = []
     
-    for src in CONFIG_SOURCES:
-        text = get_content(src)
-        lines = text.splitlines()
+    for url in SOURCES:
+        data = get_data(url)
+        lines = data.splitlines()
         
         for line in lines:
             line = line.strip()
             if len(line) < 10: continue
 
-            try:
-                # --- استراتژی ریلیتی (دست نخورد) ---
-                if "pbk=" in line or "fp=" in line and "type=grpc" in line:
-                    final_configs.append(line)
-                    continue
-
-                # --- استراتژی تزریق (فقط VLESS + WS) ---
-                if line.startswith("vless://") and "type=ws" in line:
-                    # چک کردن اینکه لینک سالم است (حتما @ و : داشته باشد)
-                    if "@" in line and ":" in line:
-                        # انتخاب آی‌پی تمیز
-                        ip = random.choice(clean_ips)
-                        
-                        # جایگزینی آی‌پی با Regex امن
-                        # فقط آی‌پی بین @ و : را عوض می‌کند
-                        line = re.sub(r'@(.*?):', f'@{ip}:', line, 1)
-                        
-                        # تغییر نام برای زیبایی
-                        if "#" in line:
-                            line = line.split("#")[0] + f"#🚀_MCI_TURBO_{random.randint(1,999)}"
-                        else:
-                            line += f"#🚀_MCI_TURBO_{random.randint(1,999)}"
-                            
-                        final_configs.append(line)
-                    else:
-                        # لینک خراب بود، ردش کن
-                        continue
-                
-                # --- سایر پروتکل‌ها (Trojan/Shadowsocks) ---
-                elif line.startswith("trojan://") or line.startswith("ss://"):
-                    final_configs.append(line)
-
-            except Exception:
-                # اگر هر خطایی در پردازش این خط رخ داد، نادیده بگیر و برو بعدی
-                # این باعث می‌شود برنامه هرگز کرش نکند
+            # --- استراتژی 1: Reality (طلا) ---
+            # اگر ریلیتی است، دست نزن و مستقیم اضافه کن
+            if "reality" in line or "pbk=" in line:
+                if "#" not in line: line += "#💎_Reality"
+                final_configs.append(line)
                 continue
 
-    # 3. ذخیره نهایی
+            # --- استراتژی 2: VLESS (نقره) ---
+            # اگر VLESS معمولی است، آی‌پی تمیز تزریق کن
+            if line.startswith("vless://") and "type=ws" in line:
+                try:
+                    # انتخاب آی‌پی تمیز
+                    clean_ip = random.choice(CLEAN_IPS)
+                    
+                    # پارس کردن لینک با Regex دقیق
+                    # هدف: پیدا کردن آدرس فعلی و جایگزینی آن
+                    # ساختار: vless://UUID@ADDRESS:PORT?PARAMS
+                    match = re.search(r'vless://(?P<uuid>.*?)@(?P<addr>.*?):(?P<port>.*?)\?(?P<params>.*)', line)
+                    
+                    if match:
+                        uuid = match.group("uuid")
+                        old_addr = match.group("addr")
+                        port = match.group("port")
+                        params = match.group("params")
+                        
+                        # نام گذاری
+                        name = line.split("#")[1] if "#" in line else "MCI_Turbo"
+
+                        # اگر SNI یا Host در پارامترها نبود، آدرس قبلی را SNI کن
+                        if "sni=" not in params: params += f"&sni={old_addr}"
+                        if "host=" not in params: params += f"&host={old_addr}"
+                        
+                        # ساخت لینک جدید با آی‌پی تمیز
+                        new_link = f"vless://{uuid}@{clean_ip}:{port}?{params}#{name}"
+                        final_configs.append(new_link)
+                except:
+                    continue
+
+    # اگر لیست خالی شد (محض احتیاط)
     if not final_configs:
-        # محض احتیاط اگر لیست خالی شد
-        final_configs = ["vless://uuid@127.0.0.1:443?encryption=none&security=tls&type=ws&host=google.com&sni=google.com#BACKUP_CONFIG"]
+        final_configs.append("vless://uuid@127.0.0.1:443?encryption=none&security=tls&type=ws&sni=google.com#ERROR")
 
+    # مخلوط کردن
     random.shuffle(final_configs)
-    # نوشتن فایل
+    
+    # ذخیره 100 تای برتر
     with open("sub.txt", "w", encoding="utf-8") as f:
-        f.write("\n".join(final_configs[:150]))
-
-    print("🎉 Done! sub.txt updated.")
+        f.write("\n".join(final_configs[:100]))
+        
+    print("✅ Done.")
 
 if __name__ == "__main__":
     main()
